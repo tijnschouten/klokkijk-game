@@ -512,6 +512,51 @@
       return all;
     },
 
+    getOverallLeaderboard() {
+      const data = this.loadRaw();
+      return data.players
+        .map((player) => {
+          const levelEntries = [];
+          for (let level = 1; level <= LearningPath.maxPhase; level += 1) {
+            const levelStat = player.phaseStats?.[String(level)];
+            if (!levelStat || (levelStat.bestScoreNorm || 0) <= 0) continue;
+            levelEntries.push({
+              scoreNorm: levelStat.bestScoreNorm || 0,
+              bestAccuracy: levelStat.bestAccuracy || 0,
+            });
+          }
+
+          const levelsPlayed = levelEntries.length;
+          const totalNorm = levelEntries.reduce((sum, entry) => sum + entry.scoreNorm, 0);
+          const avgNorm = levelsPlayed > 0 ? Math.round(totalNorm / levelsPlayed) : 0;
+          const avgAccuracy =
+            levelsPlayed > 0
+              ? Math.round(levelEntries.reduce((sum, entry) => sum + entry.bestAccuracy, 0) / levelsPlayed)
+              : 0;
+          const completedLevels = Object.values(player.phaseStats || {}).filter((stat) => stat?.completed)
+            .length;
+
+          return {
+            playerId: player.id,
+            avatar: player.avatar,
+            displayName: player.displayName,
+            levelsPlayed,
+            completedLevels,
+            totalNorm,
+            avgNorm,
+            avgAccuracy,
+          };
+        })
+        .filter((entry) => entry.levelsPlayed > 0)
+        .sort((a, b) => {
+          if (b.totalNorm !== a.totalNorm) return b.totalNorm - a.totalNorm;
+          if (b.completedLevels !== a.completedLevels) return b.completedLevels - a.completedLevels;
+          if (b.avgNorm !== a.avgNorm) return b.avgNorm - a.avgNorm;
+          if (b.avgAccuracy !== a.avgAccuracy) return b.avgAccuracy - a.avgAccuracy;
+          return a.displayName.localeCompare(b.displayName);
+        });
+    },
+
     getPlayerRecords(playerId, level) {
       const player = this.getPlayer(playerId);
       if (!player) {
@@ -1309,7 +1354,14 @@
       this.practiceControls = document.getElementById("practice-controls");
       this.practiceDifficultySelect = document.getElementById("practice-difficulty");
       this.profileSummary = document.getElementById("profile-summary");
+      this.phaseMapWrap = document.getElementById("phase-map-wrap");
       this.phaseMap = document.getElementById("phase-map");
+      this.openStatsBtn = document.getElementById("open-stats-btn");
+      this.statsSheet = document.getElementById("stats-sheet");
+      this.statsSheetOverlay = document.getElementById("stats-sheet-overlay");
+      this.closeStatsBtn = document.getElementById("close-stats-btn");
+      this.overallLeaderboardList = document.getElementById("overall-leaderboard-list");
+      this.overallLeaderboardMyRank = document.getElementById("overall-leaderboard-my-rank");
       this.leaderboardList = document.getElementById("leaderboard-list");
       this.leaderboardMyRank = document.getElementById("leaderboard-my-rank");
       this.recordBestScore = document.getElementById("record-best-score");
@@ -1354,6 +1406,9 @@
       this.addPlayerBtn.addEventListener("click", () => this.handleAddPlayer());
       this.modeChallengeBtn.addEventListener("click", () => this.setMode("challenge"));
       this.modePracticeBtn.addEventListener("click", () => this.setMode("practice"));
+      this.openStatsBtn.addEventListener("click", () => this.openStatsSheet());
+      this.closeStatsBtn.addEventListener("click", () => this.closeStatsSheet());
+      this.statsSheetOverlay.addEventListener("click", () => this.closeStatsSheet());
       this.practiceDifficultySelect.addEventListener("change", () => {
         this.selectedPracticeDifficulty = this.practiceDifficultySelect.value;
       });
@@ -1384,6 +1439,10 @@
         }
       });
       document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !this.statsSheet.classList.contains("hidden")) {
+          this.closeStatsSheet();
+          return;
+        }
         if (!this.pendingContinue) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
@@ -1405,6 +1464,7 @@
       this.modeChallengeBtn.classList.toggle("active", mode === "challenge");
       this.modePracticeBtn.classList.toggle("active", mode === "practice");
       this.practiceControls.classList.toggle("hidden", mode !== "practice");
+      this.phaseMapWrap.classList.toggle("hidden", mode !== "challenge");
       this.renderProfileSummary();
     }
 
@@ -1489,6 +1549,7 @@
     }
 
     renderStartState() {
+      this.closeStatsSheet();
       this.renderPlayersList();
       this.renderProfileSummary();
     }
@@ -1497,6 +1558,7 @@
       if (!this.activePlayerId) {
         this.profileSummary.textContent = "Voeg eerst een speler toe om te starten.";
         this.phaseMap.innerHTML = "";
+        this.phaseMapWrap.classList.toggle("hidden", this.selectedMode !== "challenge");
         this.startBtn.textContent =
           this.selectedMode === "practice" ? "Start vrij oefenen" : "Start ronde";
         this.renderScorePanels();
@@ -1523,11 +1585,39 @@
           ? "Start vrij oefenen"
           : `Start level ${this.selectedPhase}`;
       this.renderPhaseMap(summary);
+      this.phaseMapWrap.classList.toggle("hidden", this.selectedMode !== "challenge");
       this.renderScorePanels();
       this.renderPracticeInsights();
     }
 
+    openStatsSheet() {
+      this.renderScorePanels();
+      this.renderPracticeInsights();
+      this.statsSheet.classList.remove("hidden");
+      this.statsSheet.setAttribute("aria-hidden", "false");
+    }
+
+    closeStatsSheet() {
+      this.statsSheet.classList.add("hidden");
+      this.statsSheet.setAttribute("aria-hidden", "true");
+    }
+
     renderScorePanels() {
+      const overallLeaderboard = ProgressStore.getOverallLeaderboard();
+      this.overallLeaderboardList.innerHTML = "";
+      overallLeaderboard.slice(0, 7).forEach((entry, idx) => {
+        const li = document.createElement("li");
+        li.textContent =
+          `#${idx + 1} ${entry.avatar} ${entry.displayName} - Totaal: ${entry.totalNorm} p - ` +
+          `Levels: ${entry.levelsPlayed}/${LearningPath.maxPhase}`;
+        this.overallLeaderboardList.appendChild(li);
+      });
+      if (overallLeaderboard.length === 0) {
+        const li = document.createElement("li");
+        li.textContent = "Nog geen algemene scores.";
+        this.overallLeaderboardList.appendChild(li);
+      }
+
       const leaderboard = ProgressStore.getLevelLeaderboard(this.selectedPhase);
       this.leaderboardList.innerHTML = "";
       leaderboard.slice(0, 5).forEach((entry, idx) => {
@@ -1542,12 +1632,19 @@
       }
 
       if (!this.activePlayerId) {
+        this.overallLeaderboardMyRank.textContent = "";
         this.leaderboardMyRank.textContent = "";
         this.recordBestScore.textContent = "Beste score: -";
         this.recordBestAccuracy.textContent = "Beste nauwkeurigheid: -";
         this.recordBestSpeed.textContent = "Snelste gemiddelde tijd: -";
         return;
       }
+
+      const overallRank = overallLeaderboard.findIndex((entry) => entry.playerId === this.activePlayerId);
+      this.overallLeaderboardMyRank.textContent =
+        overallRank >= 0
+          ? `Jouw algemene rank: #${overallRank + 1} van ${overallLeaderboard.length}`
+          : "Nog geen algemene rank.";
 
       const rank = leaderboard.findIndex((entry) => entry.playerId === this.activePlayerId);
       this.leaderboardMyRank.textContent =
@@ -1657,6 +1754,7 @@
     }
 
     startGame() {
+      this.closeStatsSheet();
       const player = ProgressStore.getPlayer(this.activePlayerId);
       if (!player) {
         this.profileSummary.textContent = "Kies eerst een speler.";

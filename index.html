@@ -8,73 +8,54 @@
   </head>
   <body>
     <main class="app-shell">
-      <header class="app-header">
-        <h1>Klokkijk Game</h1>
-        <p>Oefen klokkijken met analoge en digitale vragen.</p>
-      </header>
+      <section id="start-screen" class="menu-screen screen active" aria-labelledby="menu-title">
+        <h2 id="menu-title" class="menu-title">Hoofdmenu</h2>
 
-      <section id="start-screen" class="card screen active" aria-labelledby="start-title">
-        <h2 id="start-title">Start</h2>
-        <p>Kies een speler of voeg een nieuwe toe.</p>
+        <section class="menu-card" aria-label="Speler kiezen">
+          <div class="card-head">
+            <h3>1. Kies speler</h3>
+          </div>
+          <div id="players-list" class="player-rail" aria-label="Bestaande spelers"></div>
+        </section>
 
-        <h3 class="sub-title">Spelers</h3>
-        <div id="players-list" class="players-list" aria-label="Bestaande spelers"></div>
+        <section class="menu-card" aria-label="Modus kiezen">
+          <h3>2. Kies modus</h3>
+          <div class="mode-switch" role="group" aria-label="Spelmodus">
+            <button id="mode-challenge-btn" class="mode-segment active" type="button">Ronde</button>
+            <button id="mode-practice-btn" class="mode-segment" type="button">Vrij oefenen</button>
+          </div>
+          <div id="practice-controls" class="practice-controls hidden">
+            <label for="practice-difficulty" class="field-label">Vrij oefenen niveau</label>
+            <select id="practice-difficulty" class="text-input">
+              <option value="auto">Automatisch (aanbevolen)</option>
+              <option value="easy">Makkelijk</option>
+              <option value="medium">Gemiddeld</option>
+              <option value="hard">Moeilijk</option>
+              <option value="player_level">Op mijn niveau</option>
+            </select>
+          </div>
+          <div id="phase-map-wrap" class="phase-map-wrap">
+            <p class="chip-label">Level</p>
+            <div id="phase-map" class="phase-chip-row" aria-label="Leveloverzicht"></div>
+          </div>
+        </section>
 
-        <div class="mode-switch" role="group" aria-label="Spelmodus">
-          <button id="mode-challenge-btn" class="secondary-btn mode-btn active" type="button">Ronde</button>
-          <button id="mode-practice-btn" class="secondary-btn mode-btn" type="button">Vrij oefenen</button>
-        </div>
-        <div id="practice-controls" class="practice-controls hidden">
-          <label for="practice-difficulty" class="field-label">Vrij oefenen niveau</label>
-          <select id="practice-difficulty" class="text-input">
-            <option value="auto">Automatisch (aanbevolen)</option>
-            <option value="easy">Makkelijk</option>
-            <option value="medium">Gemiddeld</option>
-            <option value="hard">Moeilijk</option>
-            <option value="player_level">Op mijn niveau</option>
-          </select>
-        </div>
+        <section class="menu-card leaderboard-card" aria-label="Algemeen klassement">
+          <div class="card-head">
+            <h3>Algemeen klassement</h3>
+            <button id="open-stats-btn" class="ghost-btn" type="button">Statistieken</button>
+          </div>
+          <ol id="overall-leaderboard-list" class="leaderboard-list compact"></ol>
+          <p id="overall-leaderboard-my-rank" class="leaderboard-rank"></p>
+        </section>
 
-        <div class="start-actions">
-          <button id="start-btn" class="primary-btn" type="button" disabled>Start ronde</button>
-          <button id="reset-progress-btn" class="secondary-btn" type="button">Reset voortgang</button>
-        </div>
-
-        <p id="profile-summary" class="profile-summary"></p>
-
-        <details class="collapsible">
-          <summary>Level kiezen</summary>
-          <div id="phase-map" class="phase-map" aria-label="Leveloverzicht"></div>
-        </details>
-
-        <details class="collapsible">
-          <summary>Klassement en records</summary>
-          <section class="score-panels" aria-label="Scoreoverzicht">
-            <div class="score-card">
-              <h3 class="sub-title">All-time klassement</h3>
-              <ol id="leaderboard-list" class="leaderboard-list"></ol>
-              <p id="leaderboard-my-rank" class="leaderboard-rank"></p>
-            </div>
-            <div class="score-card">
-              <h3 class="sub-title">Jouw records</h3>
-              <p id="record-best-score"></p>
-              <p id="record-best-accuracy"></p>
-              <p id="record-best-speed"></p>
-            </div>
-          </section>
-        </details>
-
-        <details class="collapsible">
-          <summary>Oefeninzichten (vrij oefenen)</summary>
-          <p id="practice-insights"></p>
-        </details>
-
-        <ul class="tips-list">
-          <li>Gemixte analoge en digitale vragen</li>
-          <li>12s timer per vraag</li>
-          <li>Snelheidsscore + streakbonus</li>
-        </ul>
-
+        <section class="menu-card menu-card-cta" aria-label="Starten">
+          <p id="profile-summary" class="profile-summary"></p>
+          <div class="start-actions">
+            <button id="start-btn" class="primary-btn" type="button" disabled>Start</button>
+          </div>
+          <button id="reset-progress-btn" class="link-btn" type="button">Voortgang resetten</button>
+        </section>
       </section>
 
       <section id="game-screen" class="card screen" aria-labelledby="question-title">
@@ -119,7 +100,34 @@
         <div class="end-actions">
           <button id="next-phase-btn" class="primary-btn" type="button">Volgend level</button>
           <button id="restart-btn" class="primary-btn" type="button">Level opnieuw</button>
-          <button id="back-to-map-btn" class="secondary-btn" type="button">Terug naar levelkaart</button>
+          <button id="back-to-map-btn" class="secondary-btn" type="button">Terug naar hoofdmenu</button>
+        </div>
+      </section>
+
+      <section id="stats-sheet" class="sheet hidden" aria-hidden="true">
+        <div class="sheet-overlay" id="stats-sheet-overlay"></div>
+        <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="stats-title">
+          <div class="sheet-head">
+            <h3 id="stats-title">Statistieken</h3>
+            <button id="close-stats-btn" class="ghost-btn" type="button">Sluiten</button>
+          </div>
+          <section class="score-panels" aria-label="Scoreoverzicht">
+            <div class="score-card">
+              <h4>All-time klassement</h4>
+              <ol id="leaderboard-list" class="leaderboard-list"></ol>
+              <p id="leaderboard-my-rank" class="leaderboard-rank"></p>
+            </div>
+            <div class="score-card">
+              <h4>Jouw records</h4>
+              <p id="record-best-score"></p>
+              <p id="record-best-accuracy"></p>
+              <p id="record-best-speed"></p>
+            </div>
+            <div class="score-card full">
+              <h4>Oefeninzichten</h4>
+              <p id="practice-insights"></p>
+            </div>
+          </section>
         </div>
       </section>
 
