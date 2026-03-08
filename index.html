@@ -20,30 +20,41 @@
         <h3 class="sub-title">Spelers</h3>
         <div id="players-list" class="players-list" aria-label="Bestaande spelers"></div>
 
-        <p id="profile-summary" class="profile-summary"></p>
-        <div id="phase-map" class="phase-map" aria-label="Leveloverzicht"></div>
-        <section class="score-panels" aria-label="Scoreoverzicht">
-          <div class="score-card">
-            <h3 class="sub-title">All-time klassement</h3>
-            <ol id="leaderboard-list" class="leaderboard-list"></ol>
-            <p id="leaderboard-my-rank" class="leaderboard-rank"></p>
-          </div>
-          <div class="score-card">
-            <h3 class="sub-title">Jouw records</h3>
-            <p id="record-best-score"></p>
-            <p id="record-best-accuracy"></p>
-            <p id="record-best-speed"></p>
-          </div>
-        </section>
+        <div class="start-actions">
+          <button id="start-btn" class="primary-btn" type="button" disabled>Start ronde</button>
+          <button id="reset-progress-btn" class="secondary-btn" type="button">Reset voortgang</button>
+        </div>
 
-        <ul>
+        <p id="profile-summary" class="profile-summary"></p>
+
+        <details class="collapsible">
+          <summary>Level kiezen</summary>
+          <div id="phase-map" class="phase-map" aria-label="Leveloverzicht"></div>
+        </details>
+
+        <details class="collapsible">
+          <summary>Klassement en records</summary>
+          <section class="score-panels" aria-label="Scoreoverzicht">
+            <div class="score-card">
+              <h3 class="sub-title">All-time klassement</h3>
+              <ol id="leaderboard-list" class="leaderboard-list"></ol>
+              <p id="leaderboard-my-rank" class="leaderboard-rank"></p>
+            </div>
+            <div class="score-card">
+              <h3 class="sub-title">Jouw records</h3>
+              <p id="record-best-score"></p>
+              <p id="record-best-accuracy"></p>
+              <p id="record-best-speed"></p>
+            </div>
+          </section>
+        </details>
+
+        <ul class="tips-list">
           <li>Gemixte analoge en digitale vragen</li>
           <li>12s timer per vraag</li>
           <li>Snelheidsscore + streakbonus</li>
         </ul>
 
-        <button id="start-btn" class="primary-btn" type="button" disabled>Start ronde</button>
-        <button id="reset-progress-btn" class="secondary-btn" type="button">Reset voortgang</button>
       </section>
 
       <section id="game-screen" class="card screen" aria-labelledby="question-title">
@@ -68,7 +79,6 @@
           <p id="companion-bubble" class="companion-bubble">Klaar? Kies het juiste antwoord!</p>
         </div>
 
-        <p id="feedback" class="feedback" aria-live="polite"></p>
         <button id="continue-btn" class="primary-btn hidden" type="button">Verder</button>
       </section>
 

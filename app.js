@@ -76,6 +76,13 @@
     return 4;
   };
 
+  const levelToMinuteStep = (level) => {
+    if (level === 1) return 60;
+    if (level === 2) return 30;
+    if (level === 3) return 15;
+    return 5;
+  };
+
   const TimeFormatterNL = {
     toDigital(time) {
       return `${pad2(time.hour24)}:${pad2(time.minute)}`;
@@ -117,7 +124,7 @@
         return "Bij 'over' kijk je naar het huidige uur.";
       }
       if (m >= 30) {
-        return "Bij 'half', 'over half' en 'voor' kijk je naar het volgende uur.";
+        return "Bij 'half' en 'voor' kijk je naar het volgende uur.";
       }
       return "Bij 'voor half' kijk je al naar het volgende uur.";
     },
@@ -207,6 +214,10 @@
           bestAccuracy: stat.bestAccuracy || 0,
           lastAccuracy: stat.lastAccuracy || 0,
           completed: Boolean(stat.completed || (stat.bestAccuracy || 0) >= 80),
+          bestScoreRaw: stat.bestScoreRaw || 0,
+          bestScoreNorm: stat.bestScoreNorm || 0,
+          bestAvgResponseMs:
+            typeof stat.bestAvgResponseMs === "number" ? stat.bestAvgResponseMs : null,
         };
       });
       return out;
@@ -440,37 +451,46 @@
       return Math.round(rawScore / factor);
     },
 
-    getLeaderboardAllTime() {
+    getLevelLeaderboard(level) {
       const data = this.loadRaw();
-      const ranked = data.players
+      return data.players
         .map((player) => {
-          const stats = player.stats || {};
+          const levelStat = player.phaseStats?.[String(level)] || null;
           return {
             playerId: player.id,
             avatar: player.avatar,
             displayName: player.displayName,
-            bestScoreNormalized: stats.bestScoreNormalized || 0,
-            bestScoreRaw: stats.bestScoreRaw || 0,
-            bestAccuracy: stats.bestAccuracy || 0,
-            bestAvgResponseMs: stats.bestAvgResponseMs,
+            bestScoreNorm: levelStat?.bestScoreNorm || 0,
+            bestScoreRaw: levelStat?.bestScoreRaw || 0,
+            bestAccuracy: levelStat?.bestAccuracy || 0,
+            bestAvgResponseMs: levelStat?.bestAvgResponseMs ?? null,
+            completed: Boolean(levelStat?.completed),
           };
         })
+        .filter((entry) => entry.bestScoreNorm > 0)
         .sort((a, b) => {
-          if (b.bestScoreNormalized !== a.bestScoreNormalized) {
-            return b.bestScoreNormalized - a.bestScoreNormalized;
-          }
-          if (b.bestAccuracy !== a.bestAccuracy) {
-            return b.bestAccuracy - a.bestAccuracy;
-          }
-          const aSpeed = typeof a.bestAvgResponseMs === "number" ? a.bestAvgResponseMs : Number.POSITIVE_INFINITY;
-          const bSpeed = typeof b.bestAvgResponseMs === "number" ? b.bestAvgResponseMs : Number.POSITIVE_INFINITY;
+          if (b.bestScoreNorm !== a.bestScoreNorm) return b.bestScoreNorm - a.bestScoreNorm;
+          if (b.bestAccuracy !== a.bestAccuracy) return b.bestAccuracy - a.bestAccuracy;
+          const aSpeed =
+            typeof a.bestAvgResponseMs === "number" ? a.bestAvgResponseMs : Number.POSITIVE_INFINITY;
+          const bSpeed =
+            typeof b.bestAvgResponseMs === "number" ? b.bestAvgResponseMs : Number.POSITIVE_INFINITY;
           if (aSpeed !== bSpeed) return aSpeed - bSpeed;
           return a.displayName.localeCompare(b.displayName);
         });
-      return ranked;
     },
 
-    getPlayerRecords(playerId) {
+    getLeaderboardAllTime() {
+      const all = [];
+      for (let level = 1; level <= LearningPath.maxPhase; level += 1) {
+        const top = this.getLevelLeaderboard(level)[0];
+        if (!top) continue;
+        all.push({ ...top, level });
+      }
+      return all;
+    },
+
+    getPlayerRecords(playerId, level) {
       const player = this.getPlayer(playerId);
       if (!player) {
         return {
@@ -480,18 +500,19 @@
           bestAvgResponseMs: null,
         };
       }
+      const levelStat = player.phaseStats?.[String(level)] || null;
       return {
-        bestScoreRaw: player.stats.bestScoreRaw || 0,
-        bestScoreNormalized: player.stats.bestScoreNormalized || 0,
-        bestAccuracy: player.stats.bestAccuracy || 0,
-        bestAvgResponseMs: player.stats.bestAvgResponseMs,
+        bestScoreRaw: levelStat?.bestScoreRaw || 0,
+        bestScoreNormalized: levelStat?.bestScoreNorm || 0,
+        bestAccuracy: levelStat?.bestAccuracy || 0,
+        bestAvgResponseMs: levelStat?.bestAvgResponseMs ?? null,
       };
     },
 
     recordRound(playerId, phase, roundResult) {
       const player = this.getPlayer(playerId);
       if (!player) return null;
-      const leaderboardBefore = this.getLeaderboardAllTime();
+      const leaderboardBefore = this.getLevelLeaderboard(phase);
       const previousRankIndex = leaderboardBefore.findIndex((entry) => entry.playerId === playerId);
 
       const phaseKey = String(phase);
@@ -500,6 +521,9 @@
         bestAccuracy: 0,
         lastAccuracy: 0,
         completed: false,
+        bestScoreRaw: 0,
+        bestScoreNorm: 0,
+        bestAvgResponseMs: null,
       };
 
       phaseStats.attempts += 1;
@@ -526,21 +550,30 @@
       player.stats.rounds = newRounds;
 
       const newRecords = {
-        scoreRaw: roundResult.totalScore > (player.stats.bestScoreRaw || 0),
-        scoreNorm: scoreNorm > (player.stats.bestScoreNormalized || 0),
-        accuracy: roundResult.accuracy > (player.stats.bestAccuracy || 0),
+        scoreRaw: roundResult.totalScore > (phaseStats.bestScoreRaw || 0),
+        scoreNorm: scoreNorm > (phaseStats.bestScoreNorm || 0),
+        accuracy: roundResult.accuracy > (phaseStats.bestAccuracy || 0),
         speed:
-          (typeof player.stats.bestAvgResponseMs !== "number" ||
-            roundResult.avgResponseMs < player.stats.bestAvgResponseMs) &&
+          (typeof phaseStats.bestAvgResponseMs !== "number" ||
+            roundResult.avgResponseMs < phaseStats.bestAvgResponseMs) &&
           roundResult.correct > 0,
       };
 
+      phaseStats.bestScoreRaw = Math.max(phaseStats.bestScoreRaw || 0, roundResult.totalScore);
+      phaseStats.bestScoreNorm = Math.max(phaseStats.bestScoreNorm || 0, scoreNorm);
+      if (newRecords.speed) {
+        phaseStats.bestAvgResponseMs = roundResult.avgResponseMs;
+      }
       player.stats.bestScoreRaw = Math.max(player.stats.bestScoreRaw || 0, roundResult.totalScore);
       player.stats.bestScoreNormalized = Math.max(player.stats.bestScoreNormalized || 0, scoreNorm);
       player.stats.bestAccuracy = Math.max(player.stats.bestAccuracy || 0, roundResult.accuracy);
       if (newRecords.speed) {
-        player.stats.bestAvgResponseMs = roundResult.avgResponseMs;
+        player.stats.bestAvgResponseMs =
+          typeof player.stats.bestAvgResponseMs === "number"
+            ? Math.min(player.stats.bestAvgResponseMs, roundResult.avgResponseMs)
+            : roundResult.avgResponseMs;
       }
+      player.phaseStats[phaseKey] = phaseStats;
       player.stats.totalTimeouts += roundResult.timeouts;
       player.stats.totalAnswers += GameConfig.questionCount;
       player.stats.totalCorrect += roundResult.correct;
@@ -563,7 +596,7 @@
       }
 
       this.updatePlayer(player);
-      const leaderboardAfter = this.getLeaderboardAllTime();
+      const leaderboardAfter = this.getLevelLeaderboard(phase);
       const currentRankIndex = leaderboardAfter.findIndex((entry) => entry.playerId === playerId);
 
       return {
@@ -703,6 +736,40 @@
         correctIndex: optionPayload.correctIndex,
         distractorMeta: optionPayload.distractorMeta,
       };
+    },
+
+    signatureFor(question) {
+      return `${question.type}:${question.time.hour24}:${question.time.minute}:${question.clockFace}`;
+    },
+
+    rebuildWithTime(question, time) {
+      const minuteStep = levelToMinuteStep(question.level);
+      const optionPayload = this.generateOptions({
+        type: question.type,
+        level: question.level,
+        time,
+        minuteStep,
+      });
+      return {
+        ...question,
+        time,
+        options: optionPayload.options,
+        correctIndex: optionPayload.correctIndex,
+        distractorMeta: optionPayload.distractorMeta,
+      };
+    },
+
+    forceUniqueVariant(question, usedSignatures) {
+      const step = levelToMinuteStep(question.level);
+      for (let delta = step; delta < 24 * 60; delta += step) {
+        const shiftedTime = addMinutes(question.time, delta);
+        const candidate = this.rebuildWithTime(question, shiftedTime);
+        const signature = this.signatureFor(candidate);
+        if (!usedSignatures.has(signature)) {
+          return candidate;
+        }
+      }
+      return question;
     },
 
     generateTime(minuteStep) {
@@ -911,14 +978,36 @@
       for (let idx = 0; idx < this.config.questionCount; idx += 1) {
         let attempts = 0;
         let q = QuestionGenerator.createQuestion(idx, phase);
-        let signature = `${q.type}:${q.time.hour24}:${q.time.minute}:${q.clockFace}`;
-        while (used.has(signature) && attempts < 50) {
+        let signature = QuestionGenerator.signatureFor(q);
+        while (used.has(signature) && attempts < 250) {
           q = QuestionGenerator.createQuestion(idx, phase);
-          signature = `${q.type}:${q.time.hour24}:${q.time.minute}:${q.clockFace}`;
+          signature = QuestionGenerator.signatureFor(q);
           attempts += 1;
+        }
+        if (used.has(signature)) {
+          q = QuestionGenerator.forceUniqueVariant(q, used);
+          signature = QuestionGenerator.signatureFor(q);
+        }
+        if (used.has(signature)) {
+          continue;
         }
         used.add(signature);
         this.questions.push(q);
+      }
+
+      while (this.questions.length < this.config.questionCount) {
+        const idx = this.questions.length;
+        let q = QuestionGenerator.createQuestion(idx, phase);
+        q = QuestionGenerator.forceUniqueVariant(q, used);
+        const signature = QuestionGenerator.signatureFor(q);
+        if (used.has(signature)) break;
+        used.add(signature);
+        this.questions.push(q);
+      }
+
+      while (this.questions.length < this.config.questionCount) {
+        const idx = this.questions.length;
+        this.questions.push(QuestionGenerator.createQuestion(idx, phase));
       }
     }
 
@@ -1032,7 +1121,6 @@
       this.scoreEl = document.getElementById("score");
       this.streakEl = document.getElementById("streak");
       this.timerEl = document.getElementById("timer");
-      this.feedbackEl = document.getElementById("feedback");
       this.continueBtn = document.getElementById("continue-btn");
       this.companionBubble = document.getElementById("companion-bubble");
       this.companionAvatarEl = document.querySelector(".companion-avatar");
@@ -1169,7 +1257,6 @@
     renderStartState() {
       this.renderPlayersList();
       this.renderProfileSummary();
-      this.renderScorePanels();
     }
 
     renderProfileSummary() {
@@ -1177,6 +1264,7 @@
         this.profileSummary.textContent = "Voeg eerst een speler toe om te starten.";
         this.phaseMap.innerHTML = "";
         this.startBtn.textContent = "Start ronde";
+        this.renderScorePanels();
         return;
       }
 
@@ -1196,19 +1284,20 @@
 
       this.startBtn.textContent = `Start level ${this.selectedPhase}`;
       this.renderPhaseMap(summary);
+      this.renderScorePanels();
     }
 
     renderScorePanels() {
-      const leaderboard = ProgressStore.getLeaderboardAllTime();
+      const leaderboard = ProgressStore.getLevelLeaderboard(this.selectedPhase);
       this.leaderboardList.innerHTML = "";
       leaderboard.slice(0, 5).forEach((entry, idx) => {
         const li = document.createElement("li");
-        li.textContent = `#${idx + 1} ${entry.avatar} ${entry.displayName} - ${entry.bestScoreNormalized} p`;
+        li.textContent = `#${idx + 1} ${entry.avatar} ${entry.displayName} - ${entry.bestScoreNorm} p`;
         this.leaderboardList.appendChild(li);
       });
       if (leaderboard.length === 0) {
         const li = document.createElement("li");
-        li.textContent = "Nog geen scores.";
+        li.textContent = `Nog geen scores voor level ${this.selectedPhase}.`;
         this.leaderboardList.appendChild(li);
       }
 
@@ -1222,16 +1311,29 @@
 
       const rank = leaderboard.findIndex((entry) => entry.playerId === this.activePlayerId);
       this.leaderboardMyRank.textContent =
-        rank >= 0 ? `Jouw rank: #${rank + 1} van ${leaderboard.length}` : "";
+        rank >= 0
+          ? `Jouw rank (level ${this.selectedPhase}): #${rank + 1} van ${leaderboard.length}`
+          : `Nog geen rank voor level ${this.selectedPhase}.`;
 
-      const records = ProgressStore.getPlayerRecords(this.activePlayerId);
+      const records = ProgressStore.getPlayerRecords(this.activePlayerId, this.selectedPhase);
       this.recordBestScore.textContent =
-        `Beste score: ${records.bestScoreRaw} p (ranking: ${records.bestScoreNormalized} p)`;
+        `Beste score (level ${this.selectedPhase}): ${records.bestScoreRaw} p (ranking: ${records.bestScoreNormalized} p)`;
       this.recordBestAccuracy.textContent = `Beste nauwkeurigheid: ${records.bestAccuracy}%`;
       this.recordBestSpeed.textContent =
         `Snelste gemiddelde tijd: ${
           typeof records.bestAvgResponseMs === "number" ? formatMsToSec(records.bestAvgResponseMs) : "-"
         }`;
+    }
+
+    getStarsForLevel(level, summary) {
+      if (!summary.completedPhases.includes(level)) return "";
+      const records = ProgressStore.getPlayerRecords(this.activePlayerId, level);
+      const maxNorm = Math.round((2000 / (LEVEL_SCORE_FACTORS[level] || 1)));
+      const ratio = maxNorm > 0 ? records.bestScoreNormalized / maxNorm : 0;
+      let stars = 1;
+      if (ratio >= 0.9) stars = 3;
+      else if (ratio >= 0.75) stars = 2;
+      return "⭐".repeat(stars);
     }
 
     renderPhaseMap(summary) {
@@ -1248,8 +1350,12 @@
         if (!unlocked) btn.classList.add("locked");
         if (selected) btn.classList.add("selected");
 
-        const status = completed ? "✅" : unlocked ? "🔓" : "🔒";
-        btn.textContent = `Level ${phase} ${status}`;
+        const statusLabel = completed ? "Klaar" : unlocked ? "Open" : "Dicht";
+        const stars = this.getStarsForLevel(phase, summary);
+        const levelLeaderboard = ProgressStore.getLevelLeaderboard(phase);
+        const topPlayerId = levelLeaderboard[0]?.playerId || null;
+        const crown = topPlayerId && this.activePlayerId === topPlayerId ? " 👑" : "";
+        btn.textContent = `Level ${phase}${crown}\n${statusLabel}${stars ? ` ${stars}` : ""}`;
         btn.title = LearningPath.phaseLabel(phase);
         btn.disabled = !unlocked;
 
@@ -1304,8 +1410,6 @@
       this.answerLocked = false;
       this.pendingContinue = false;
       this.lastAnswerResult = null;
-      this.feedbackEl.textContent = "";
-      this.feedbackEl.className = "feedback";
       this.continueBtn.classList.add("hidden");
       this.setCompanionFeedback("", "neutral");
       this.showScreen(this.gameScreen);
@@ -1328,8 +1432,6 @@
       this.answerLocked = false;
       this.pendingContinue = false;
       this.lastAnswerResult = null;
-      this.feedbackEl.textContent = "";
-      this.feedbackEl.className = "feedback";
       this.continueBtn.classList.add("hidden");
       this.setCompanionFeedback("", "neutral");
 
@@ -1421,27 +1523,21 @@
 
       const elapsedSec = (result.elapsedMs / 1000).toFixed(1);
       if (result.isCorrect) {
-        this.feedbackEl.textContent = `🌟 Goed! +${result.gainedPoints} punten`;
-        this.feedbackEl.className = "feedback ok";
         this.gameScreen.classList.add("success-burst");
         setTimeout(() => this.gameScreen.classList.remove("success-burst"), 420);
         this.setCompanionFeedback(`Top! ${elapsedSec}s snel. +${result.gainedPoints} punten!`, "happy");
         setTimeout(() => this.proceedToNextQuestion(), 1200);
       } else if (result.isTimeout) {
-        this.feedbackEl.textContent = `⏰ Tijd op. Juiste antwoord: ${result.correctAnswer}`;
-        this.feedbackEl.className = "feedback error review";
         this.setCompanionFeedback(
-          `Tijd op. ${TimeFormatterNL.anchorHint(question.time)} Juiste antwoord: ${result.correctAnswer}.`,
+          `Tijd op. Juiste antwoord: ${result.correctAnswer}. ${TimeFormatterNL.anchorHint(question.time)}`,
           "timeout"
         );
         this.pendingContinue = true;
         this.continueBtn.classList.remove("hidden");
         this.continueBtn.focus();
       } else {
-        this.feedbackEl.textContent = `❌ Fout. Juiste antwoord: ${result.correctAnswer}`;
-        this.feedbackEl.className = "feedback error review";
         this.setCompanionFeedback(
-          `Jammer. ${TimeFormatterNL.anchorHint(question.time)} Juiste antwoord: ${result.correctAnswer}.`,
+          `Jammer. Juiste antwoord: ${result.correctAnswer}. ${TimeFormatterNL.anchorHint(question.time)}`,
           "sad"
         );
         this.pendingContinue = true;
@@ -1494,7 +1590,7 @@
                 ? ` (-${cur - prev})`
                 : " (geen wijziging)"
             : "";
-        this.summaryRank.textContent = `All-time rank: #${cur}${deltaText}`;
+        this.summaryRank.textContent = `All-time rank level ${result.phase}: #${cur}${deltaText}`;
       } else {
         this.summaryRank.textContent = "";
       }
@@ -1586,6 +1682,19 @@
       options.distractorMeta.some(
         (d) => d.kind === DistractorKind.HAND_SWAP || d.kind === DistractorKind.FALLBACK
       )
+    );
+
+    const testGame = new GameState(GameConfig);
+    testGame.initRound({
+      playerId: "test",
+      profileName: "Test",
+      profileAvatar: "🐱",
+      phase: 3,
+    });
+    const signatures = testGame.questions.map((q) => QuestionGenerator.signatureFor(q));
+    expect(
+      "Geen dubbele vragen in ronde",
+      new Set(signatures).size === testGame.questions.length
     );
 
     const failures = checks.filter((c) => !c.ok);
