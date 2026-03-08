@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Klokkijk Game</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <h1>Klokkijk Game</h1>
+        <p>Oefen klokkijken met analoge en digitale vragen.</p>
+      </header>
+
+      <section id="start-screen" class="card screen active" aria-labelledby="start-title">
+        <h2 id="start-title">Start</h2>
+        <p>Kies een speler of voeg een nieuwe toe.</p>
+
+        <h3 class="sub-title">Spelers</h3>
+        <div id="players-list" class="players-list" aria-label="Bestaande spelers"></div>
+
+        <p id="profile-summary" class="profile-summary"></p>
+        <div id="phase-map" class="phase-map" aria-label="Leveloverzicht"></div>
+        <section class="score-panels" aria-label="Scoreoverzicht">
+          <div class="score-card">
+            <h3 class="sub-title">All-time klassement</h3>
+            <ol id="leaderboard-list" class="leaderboard-list"></ol>
+            <p id="leaderboard-my-rank" class="leaderboard-rank"></p>
+          </div>
+          <div class="score-card">
+            <h3 class="sub-title">Jouw records</h3>
+            <p id="record-best-score"></p>
+            <p id="record-best-accuracy"></p>
+            <p id="record-best-speed"></p>
+          </div>
+        </section>
+
+        <ul>
+          <li>Gemixte analoge en digitale vragen</li>
+          <li>12s timer per vraag</li>
+          <li>Snelheidsscore + streakbonus</li>
+        </ul>
+
+        <button id="start-btn" class="primary-btn" type="button" disabled>Start ronde</button>
+        <button id="reset-progress-btn" class="secondary-btn" type="button">Reset voortgang</button>
+      </section>
+
+      <section id="game-screen" class="card screen" aria-labelledby="question-title">
+        <div class="hud">
+          <p id="progress" class="pill">Vraag 1/10</p>
+          <p id="score" class="pill">Punten: 0</p>
+          <p id="streak" class="pill">Streak: 0</p>
+          <p id="timer" class="pill">Timer: 12s</p>
+        </div>
+
+        <h2 id="question-title">Hoe laat is het?</h2>
+
+        <div id="clock-wrap" class="clock-wrap" aria-live="polite">
+          <canvas id="analog-clock" width="320" height="320" aria-label="Analoge klok"></canvas>
+          <div id="digital-clock" class="digital-clock" aria-label="Digitale klok">00:00</div>
+        </div>
+
+        <div id="options" class="options" role="group" aria-label="Antwoordopties"></div>
+
+        <div class="companion-wrap" aria-live="polite">
+          <p class="companion-avatar" aria-hidden="true">🐱</p>
+          <p id="companion-bubble" class="companion-bubble">Klaar? Kies het juiste antwoord!</p>
+        </div>
+
+        <p id="feedback" class="feedback" aria-live="polite"></p>
+        <button id="continue-btn" class="primary-btn hidden" type="button">Verder</button>
+      </section>
+
+      <section id="end-screen" class="card screen" aria-labelledby="end-title">
+        <h2 id="end-title">Ronde klaar</h2>
+        <p id="summary-phase"></p>
+        <p id="summary-score"></p>
+        <p id="summary-accuracy"></p>
+        <p id="summary-streak"></p>
+        <p id="summary-time"></p>
+        <p id="summary-score-norm"></p>
+        <p id="summary-rank"></p>
+        <p id="summary-records"></p>
+        <p id="summary-progress-note"></p>
+        <div class="end-actions">
+          <button id="next-phase-btn" class="primary-btn" type="button">Volgend level</button>
+          <button id="restart-btn" class="primary-btn" type="button">Level opnieuw</button>
+          <button id="back-to-map-btn" class="secondary-btn" type="button">Terug naar levelkaart</button>
+        </div>
+      </section>
+
+      <section id="add-player-modal" class="modal hidden" aria-hidden="true">
+        <div class="modal-card">
+          <h3 class="sub-title">Nieuwe speler</h3>
+          <label for="new-player-name" class="field-label">Naam</label>
+          <input
+            id="new-player-name"
+            class="text-input"
+            type="text"
+            maxlength="32"
+            placeholder="Bijv. Noor"
+            autocomplete="new-password"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            name="klokkijk-player-id"
+          />
+          <div id="avatar-picker" class="avatar-picker" aria-label="Avatar kiezen"></div>
+          <div class="modal-actions">
+            <button id="add-player-btn" class="primary-btn" type="button">Toevoegen</button>
+            <button id="close-player-modal-btn" class="secondary-btn" type="button">Annuleren</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
