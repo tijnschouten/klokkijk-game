@@ -1369,10 +1369,14 @@
       this.recordBestSpeed = document.getElementById("record-best-speed");
       this.practiceInsightsEl = document.getElementById("practice-insights");
       this.addPlayerModal = document.getElementById("add-player-modal");
+      this.playersModal = document.getElementById("players-modal");
+      this.playersModalList = document.getElementById("players-modal-list");
       this.avatarPicker = document.getElementById("avatar-picker");
       this.newPlayerNameInput = document.getElementById("new-player-name");
       this.addPlayerBtn = document.getElementById("add-player-btn");
       this.closePlayerModalBtn = document.getElementById("close-player-modal-btn");
+      this.closePlayersModalBtn = document.getElementById("close-players-modal-btn");
+      this.playersModalAddBtn = document.getElementById("players-modal-add-btn");
 
       this.startBtn = document.getElementById("start-btn");
       this.resetProgressBtn = document.getElementById("reset-progress-btn");
@@ -1413,6 +1417,11 @@
         this.selectedPracticeDifficulty = this.practiceDifficultySelect.value;
       });
       this.closePlayerModalBtn.addEventListener("click", () => this.closeAddPlayerModal());
+      this.closePlayersModalBtn.addEventListener("click", () => this.closePlayersModal());
+      this.playersModalAddBtn.addEventListener("click", () => {
+        this.closePlayersModal();
+        this.openAddPlayerModal();
+      });
       this.startBtn.addEventListener("click", () => this.startGame());
       this.resetProgressBtn.addEventListener("click", () => this.resetProgress());
       this.continueBtn.addEventListener("click", () => this.handleContinueAfterReview());
@@ -1443,6 +1452,10 @@
           this.closeStatsSheet();
           return;
         }
+        if (event.key === "Escape" && !this.playersModal.classList.contains("hidden")) {
+          this.closePlayersModal();
+          return;
+        }
         if (!this.pendingContinue) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
@@ -1452,6 +1465,11 @@
       this.addPlayerModal.addEventListener("click", (event) => {
         if (event.target === this.addPlayerModal) {
           this.closeAddPlayerModal();
+        }
+      });
+      this.playersModal.addEventListener("click", (event) => {
+        if (event.target === this.playersModal) {
+          this.closePlayersModal();
         }
       });
 
@@ -1500,7 +1518,20 @@
       }
 
       this.playersList.innerHTML = "";
-      players.forEach((player) => {
+      const maxVisiblePlayers = 3;
+      let visiblePlayers = players.slice(0, maxVisiblePlayers);
+      if (
+        this.activePlayerId &&
+        players.length > maxVisiblePlayers &&
+        !visiblePlayers.some((p) => p.id === this.activePlayerId)
+      ) {
+        const activePlayer = players.find((p) => p.id === this.activePlayerId);
+        if (activePlayer) {
+          visiblePlayers = [...visiblePlayers.slice(0, maxVisiblePlayers - 1), activePlayer];
+        }
+      }
+
+      visiblePlayers.forEach((player) => {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "player-btn";
@@ -1523,15 +1554,59 @@
         this.playersList.appendChild(btn);
       });
 
-      const addBtn = document.createElement("button");
-      addBtn.type = "button";
-      addBtn.className = "player-btn add-new";
-      addBtn.textContent = "+";
-      addBtn.title = "Nieuwe speler toevoegen";
-      addBtn.addEventListener("click", () => this.openAddPlayerModal());
-      this.playersList.appendChild(addBtn);
+      const utilityBtn = document.createElement("button");
+      utilityBtn.type = "button";
+      utilityBtn.className = "player-btn add-new";
+      if (players.length > maxVisiblePlayers) {
+        utilityBtn.classList.add("player-btn-more");
+        utilityBtn.innerHTML = `<span class="player-avatar">+${players.length - visiblePlayers.length}</span><span class="player-name">Meer</span>`;
+        utilityBtn.title = "Meer spelers";
+        utilityBtn.addEventListener("click", () => this.openPlayersModal());
+      } else {
+        utilityBtn.innerHTML = `<span class="player-avatar">+</span><span class="player-name">Nieuw</span>`;
+        utilityBtn.title = "Nieuwe speler toevoegen";
+        utilityBtn.addEventListener("click", () => this.openAddPlayerModal());
+      }
+      this.playersList.appendChild(utilityBtn);
 
       this.startBtn.disabled = !this.activePlayerId;
+    }
+
+    renderPlayersModalList() {
+      const { players } = ProgressStore.listPlayers();
+      this.playersModalList.innerHTML = "";
+      players.forEach((player) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "player-btn";
+        if (player.id === this.activePlayerId) btn.classList.add("selected");
+        const avatarEl = document.createElement("span");
+        avatarEl.className = "player-avatar";
+        avatarEl.textContent = player.avatar;
+        const nameEl = document.createElement("span");
+        nameEl.className = "player-name";
+        nameEl.textContent = player.displayName;
+        btn.appendChild(avatarEl);
+        btn.appendChild(nameEl);
+        btn.addEventListener("click", () => {
+          this.activePlayerId = player.id;
+          ProgressStore.setSelectedPlayer(player.id);
+          this.closePlayersModal();
+          this.renderStartState();
+        });
+        this.playersModalList.appendChild(btn);
+      });
+    }
+
+    openPlayersModal() {
+      this.renderPlayersModalList();
+      this.playersModal.classList.remove("hidden");
+      this.playersModal.setAttribute("aria-hidden", "false");
+    }
+
+    closePlayersModal() {
+      this.playersModal.classList.add("hidden");
+      this.playersModal.setAttribute("aria-hidden", "true");
     }
 
     openAddPlayerModal() {
@@ -1550,6 +1625,7 @@
 
     renderStartState() {
       this.closeStatsSheet();
+      this.closePlayersModal();
       this.renderPlayersList();
       this.renderProfileSummary();
     }
