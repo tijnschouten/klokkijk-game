@@ -4,6 +4,7 @@
     maxQuestionTimeMs: 12000,
     storageKey: "klokkijk:progress:v3",
     maxStoredRoundsPerPlayer: 30,
+    practiceRecentLimit: 8,
   };
 
   const LEVEL_SCORE_FACTORS = {
@@ -196,6 +197,13 @@
           totalCorrect: 0,
           totalResponseMs: 0,
           rounds: [],
+          practice: {
+            sessions: 0,
+            answers: 0,
+            correct: 0,
+            byKind: {},
+            byType: { analog: 0, digital: 0 },
+          },
         },
       };
     },
@@ -252,6 +260,13 @@
         totalCorrect: normalized.stats?.totalCorrect || 0,
         totalResponseMs: normalized.stats?.totalResponseMs || 0,
         rounds: Array.isArray(normalized.stats?.rounds) ? normalized.stats.rounds : [],
+        practice: {
+          sessions: normalized.stats?.practice?.sessions || 0,
+          answers: normalized.stats?.practice?.answers || 0,
+          correct: normalized.stats?.practice?.correct || 0,
+          byKind: normalized.stats?.practice?.byKind || {},
+          byType: normalized.stats?.practice?.byType || { analog: 0, digital: 0 },
+        },
       };
 
       delete normalized.currentPhase;
@@ -290,6 +305,13 @@
             totalCorrect: 0,
             totalResponseMs: 0,
             rounds: [],
+            practice: {
+              sessions: 0,
+              answers: 0,
+              correct: 0,
+              byKind: {},
+              byType: { analog: 0, digital: 0 },
+            },
           },
         });
         return migrated;
@@ -509,6 +531,55 @@
       };
     },
 
+    getPracticeInsights(playerId) {
+      const player = this.getPlayer(playerId);
+      const practice = player?.stats?.practice;
+      if (!practice) {
+        return {
+          sessions: 0,
+          answers: 0,
+          correctRate: 0,
+          weakestKinds: [],
+          strongKinds: [],
+        };
+      }
+      const byKindEntries = Object.entries(practice.byKind || {});
+      byKindEntries.sort((a, b) => b[1] - a[1]);
+      return {
+        sessions: practice.sessions || 0,
+        answers: practice.answers || 0,
+        correctRate:
+          practice.answers > 0 ? Math.round((practice.correct / practice.answers) * 100) : 0,
+        weakestKinds: byKindEntries.slice(0, 2).map(([kind]) => kind),
+        strongKinds: byKindEntries.slice(-2).map(([kind]) => kind),
+      };
+    },
+
+    recordPracticeAnswer(playerId, payload) {
+      const player = this.getPlayer(playerId);
+      if (!player) return;
+      const practice = player.stats.practice || {
+        sessions: 0,
+        answers: 0,
+        correct: 0,
+        byKind: {},
+        byType: { analog: 0, digital: 0 },
+      };
+
+      if (payload.startSession) {
+        practice.sessions += 1;
+      }
+      practice.answers += 1;
+      if (payload.isCorrect) practice.correct += 1;
+      const kind = payload.errorKind || "other";
+      practice.byKind[kind] = (practice.byKind[kind] || 0) + 1;
+      const qType = payload.questionType || "analog";
+      practice.byType[qType] = (practice.byType[qType] || 0) + 1;
+
+      player.stats.practice = practice;
+      this.updatePlayer(player);
+    },
+
     recordRound(playerId, phase, roundResult) {
       const player = this.getPlayer(playerId);
       if (!player) return null;
@@ -637,6 +708,13 @@
         totalCorrect: 0,
         totalResponseMs: 0,
         rounds: [],
+        practice: {
+          sessions: 0,
+          answers: 0,
+          correct: 0,
+          byKind: {},
+          byType: { analog: 0, digital: 0 },
+        },
       };
       this.updatePlayer(player);
     },
@@ -715,6 +793,63 @@
   }
 
   const QuestionGenerator = {
+    choosePracticeSpec(insights = {}, options = {}) {
+      const basePhase = options.phase || 5;
+      const baseSpec = LearningPath.getQuestionSpec(basePhase, Math.floor(Math.random() * 10));
+      const weak = insights.weakestKinds?.[0] || "";
+      const baseType = baseSpec.type;
+      const baseStep = baseSpec.minuteStep;
+      const baseFace = baseSpec.clockFace;
+      if (weak === DistractorKind.HAND_SWAP) {
+        return { type: "analog", minuteStep: Math.min(baseStep, 5), clockFace: baseFace };
+      }
+      if (weak === DistractorKind.REFERENCE_ANCHOR_CONFUSION) {
+        return {
+          type: Math.random() < 0.5 ? "analog" : "digital",
+          minuteStep: Math.min(baseStep, 15),
+          clockFace: "withNumbers",
+        };
+      }
+      if (weak === DistractorKind.NEAR_MINUTE) {
+        return {
+          type: Math.random() < 0.5 ? "analog" : "digital",
+          minuteStep: Math.min(baseStep, 5),
+          clockFace: baseFace,
+        };
+      }
+      if (weak === DistractorKind.HOUR_REFERENCE) {
+        return {
+          type: Math.random() < 0.5 ? "analog" : "digital",
+          minuteStep: Math.min(baseStep, 15),
+          clockFace: "withNumbers",
+        };
+      }
+      return { type: baseType, minuteStep: baseStep, clockFace: baseFace };
+    },
+
+    createPracticeQuestion(questionIndex, insights = {}, options = {}) {
+      const spec = this.choosePracticeSpec(insights, options);
+      const level = minuteStepToLevel(spec.minuteStep);
+      const time = this.generateTime(spec.minuteStep);
+      const optionPayload = this.generateOptions({
+        type: spec.type,
+        level,
+        time,
+        minuteStep: spec.minuteStep,
+      });
+      return {
+        id: `p-${questionIndex + 1}`,
+        type: spec.type,
+        level,
+        time,
+        clockFace: spec.clockFace,
+        requiredMisconceptionKinds: [DistractorKind.REFERENCE_ANCHOR_CONFUSION],
+        options: optionPayload.options,
+        correctIndex: optionPayload.correctIndex,
+        distractorMeta: optionPayload.distractorMeta,
+      };
+    },
+
     createQuestion(questionIndex, phase) {
       const spec = LearningPath.getQuestionSpec(phase, questionIndex);
       const type = spec.type;
@@ -965,10 +1100,17 @@
       this.playerId = "";
       this.profileName = "Speler";
       this.profileAvatar = "🐱";
+      this.mode = "challenge";
+      this.practiceRecentSignatures = [];
+      this.practiceContext = {
+        difficultyMode: "auto",
+        highestUnlockedPhase: 1,
+      };
     }
 
     initRound({ playerId, profileName, profileAvatar, phase }) {
       this.reset();
+      this.mode = "challenge";
       this.phase = phase;
       this.playerId = playerId;
       this.profileName = profileName;
@@ -1011,6 +1153,61 @@
       }
     }
 
+    initPractice({ playerId, profileName, profileAvatar, insights, difficultyMode, highestUnlockedPhase }) {
+      this.reset();
+      this.mode = "practice";
+      this.phase = 5;
+      this.playerId = playerId;
+      this.profileName = profileName;
+      this.profileAvatar = profileAvatar;
+      this.practiceContext = {
+        difficultyMode: difficultyMode || "auto",
+        highestUnlockedPhase: Math.max(1, highestUnlockedPhase || 1),
+      };
+      this.pushPracticeQuestion(insights);
+    }
+
+    getPracticeTargetPhase() {
+      const mode = this.practiceContext.difficultyMode;
+      const highest = this.practiceContext.highestUnlockedPhase;
+      if (mode === "easy") {
+        return Math.random() < 0.5 ? 1 : 2;
+      }
+      if (mode === "medium") {
+        return Math.random() < 0.5 ? 3 : 4;
+      }
+      if (mode === "hard") {
+        return 5;
+      }
+      if (mode === "player_level") {
+        return Math.min(5, highest);
+      }
+      const startPhase = Math.max(1, highest - 2);
+      const growth = Math.floor(this.currentIndex / 5);
+      return Math.min(5, startPhase + growth);
+    }
+
+    pushPracticeQuestion(insights) {
+      let attempts = 0;
+      const targetPhase = this.getPracticeTargetPhase();
+      let question = QuestionGenerator.createPracticeQuestion(this.currentIndex, insights, {
+        phase: targetPhase,
+      });
+      let signature = QuestionGenerator.signatureFor(question);
+      while (this.practiceRecentSignatures.includes(signature) && attempts < 100) {
+        question = QuestionGenerator.createPracticeQuestion(this.currentIndex + attempts + 1, insights, {
+          phase: targetPhase,
+        });
+        signature = QuestionGenerator.signatureFor(question);
+        attempts += 1;
+      }
+      this.questions.push(question);
+      this.practiceRecentSignatures.push(signature);
+      if (this.practiceRecentSignatures.length > GameConfig.practiceRecentLimit) {
+        this.practiceRecentSignatures.shift();
+      }
+    }
+
     currentQuestion() {
       return this.questions[this.currentIndex];
     }
@@ -1042,12 +1239,19 @@
       this.responseTimes.push(boundedMs);
       this.totalResponseMs += boundedMs;
 
+      const metaByIndex = {};
+      question.distractorMeta.forEach((item) => {
+        metaByIndex[item.optionIndex] = item.kind;
+      });
+
       return {
         isCorrect,
         isTimeout,
         gainedPoints,
         elapsedMs: boundedMs,
         correctAnswer: question.options[question.correctIndex],
+        errorKind: isCorrect ? "correct" : isTimeout ? "timeout" : metaByIndex[selectedIndex] || "other",
+        questionType: question.type,
       };
     }
 
@@ -1087,6 +1291,8 @@
       this.activePlayerId = "";
       this.selectedPhase = 1;
       this.lastRoundPhase = 1;
+      this.selectedMode = "challenge";
+      this.selectedPracticeDifficulty = "auto";
       this.timerInterval = null;
       this.questionStartMs = 0;
       this.questionDeadlineMs = 0;
@@ -1098,6 +1304,10 @@
       this.endScreen = document.getElementById("end-screen");
 
       this.playersList = document.getElementById("players-list");
+      this.modeChallengeBtn = document.getElementById("mode-challenge-btn");
+      this.modePracticeBtn = document.getElementById("mode-practice-btn");
+      this.practiceControls = document.getElementById("practice-controls");
+      this.practiceDifficultySelect = document.getElementById("practice-difficulty");
       this.profileSummary = document.getElementById("profile-summary");
       this.phaseMap = document.getElementById("phase-map");
       this.leaderboardList = document.getElementById("leaderboard-list");
@@ -1105,6 +1315,7 @@
       this.recordBestScore = document.getElementById("record-best-score");
       this.recordBestAccuracy = document.getElementById("record-best-accuracy");
       this.recordBestSpeed = document.getElementById("record-best-speed");
+      this.practiceInsightsEl = document.getElementById("practice-insights");
       this.addPlayerModal = document.getElementById("add-player-modal");
       this.avatarPicker = document.getElementById("avatar-picker");
       this.newPlayerNameInput = document.getElementById("new-player-name");
@@ -1116,6 +1327,7 @@
       this.nextPhaseBtn = document.getElementById("next-phase-btn");
       this.restartBtn = document.getElementById("restart-btn");
       this.backToMapBtn = document.getElementById("back-to-map-btn");
+      this.stopSessionBtn = document.getElementById("stop-session-btn");
 
       this.progressEl = document.getElementById("progress");
       this.scoreEl = document.getElementById("score");
@@ -1140,6 +1352,11 @@
       this.summaryProgressNote = document.getElementById("summary-progress-note");
 
       this.addPlayerBtn.addEventListener("click", () => this.handleAddPlayer());
+      this.modeChallengeBtn.addEventListener("click", () => this.setMode("challenge"));
+      this.modePracticeBtn.addEventListener("click", () => this.setMode("practice"));
+      this.practiceDifficultySelect.addEventListener("change", () => {
+        this.selectedPracticeDifficulty = this.practiceDifficultySelect.value;
+      });
       this.closePlayerModalBtn.addEventListener("click", () => this.closeAddPlayerModal());
       this.startBtn.addEventListener("click", () => this.startGame());
       this.resetProgressBtn.addEventListener("click", () => this.resetProgress());
@@ -1147,6 +1364,15 @@
       this.nextPhaseBtn.addEventListener("click", () => this.startNextPhase());
       this.restartBtn.addEventListener("click", () => this.startGameAtPhase(this.lastRoundPhase));
       this.backToMapBtn.addEventListener("click", () => {
+        this.renderStartState();
+        this.showScreen(this.startScreen);
+      });
+      this.stopSessionBtn.addEventListener("click", () => {
+        this.stopQuestionTimer();
+        this.pendingContinue = false;
+        this.answerLocked = false;
+        this.continueBtn.classList.add("hidden");
+        this.setCompanionFeedback("", "neutral");
         this.renderStartState();
         this.showScreen(this.startScreen);
       });
@@ -1172,6 +1398,14 @@
 
       this.renderAvatarPicker();
       this.renderStartState();
+    }
+
+    setMode(mode) {
+      this.selectedMode = mode;
+      this.modeChallengeBtn.classList.toggle("active", mode === "challenge");
+      this.modePracticeBtn.classList.toggle("active", mode === "practice");
+      this.practiceControls.classList.toggle("hidden", mode !== "practice");
+      this.renderProfileSummary();
     }
 
     showScreen(target) {
@@ -1263,8 +1497,10 @@
       if (!this.activePlayerId) {
         this.profileSummary.textContent = "Voeg eerst een speler toe om te starten.";
         this.phaseMap.innerHTML = "";
-        this.startBtn.textContent = "Start ronde";
+        this.startBtn.textContent =
+          this.selectedMode === "practice" ? "Start vrij oefenen" : "Start ronde";
         this.renderScorePanels();
+        this.renderPracticeInsights();
         return;
       }
 
@@ -1282,9 +1518,13 @@
         `${summary.avatar} ${summary.displayName} - ${phaseLabel} - ` +
         `Vrijgespeeld t/m level ${summary.highestUnlockedPhase} - ${accuracyText}`;
 
-      this.startBtn.textContent = `Start level ${this.selectedPhase}`;
+      this.startBtn.textContent =
+        this.selectedMode === "practice"
+          ? "Start vrij oefenen"
+          : `Start level ${this.selectedPhase}`;
       this.renderPhaseMap(summary);
       this.renderScorePanels();
+      this.renderPracticeInsights();
     }
 
     renderScorePanels() {
@@ -1323,6 +1563,34 @@
         `Snelste gemiddelde tijd: ${
           typeof records.bestAvgResponseMs === "number" ? formatMsToSec(records.bestAvgResponseMs) : "-"
         }`;
+    }
+
+    renderPracticeInsights() {
+      if (!this.activePlayerId) {
+        this.practiceInsightsEl.textContent = "Nog geen oefeninzichten.";
+        return;
+      }
+      const insights = ProgressStore.getPracticeInsights(this.activePlayerId);
+      const toLabel = (kind) => {
+        const map = {
+          handSwap: "wijzers omgewisseld",
+          referenceAnchorConfusion: "uuranker (half/voor/over)",
+          nearMinute: "minuten-inschatting",
+          hourReference: "uurverwijzing",
+          timeout: "tijdsdruk",
+          other: "overig",
+          correct: "goed beantwoorde patronen",
+        };
+        return map[kind] || kind;
+      };
+      const weak =
+        insights.weakestKinds.length > 0
+          ? insights.weakestKinds.map(toLabel).join(", ")
+          : "nog geen";
+      const strong =
+        insights.strongKinds.length > 0 ? insights.strongKinds.map(toLabel).join(", ") : "nog geen";
+      this.practiceInsightsEl.textContent =
+        `Sessies: ${insights.sessions} - Juist: ${insights.correctRate}% - Meer oefenen: ${weak} - Gaat al goed: ${strong}.`;
     }
 
     getStarsForLevel(level, summary) {
@@ -1395,22 +1663,34 @@
         return;
       }
 
-      const startPhase = Math.max(1, Math.min(this.selectedPhase, player.highestUnlockedPhase));
-      this.selectedPhase = startPhase;
-      ProgressStore.setSelectedPhase(player.id, startPhase);
-
-      this.game.initRound({
-        playerId: player.id,
-        profileName: player.displayName,
-        profileAvatar: player.avatar,
-        phase: startPhase,
-      });
-      this.lastRoundPhase = startPhase;
+      if (this.selectedMode === "practice") {
+        const insights = ProgressStore.getPracticeInsights(player.id);
+        this.game.initPractice({
+          playerId: player.id,
+          profileName: player.displayName,
+          profileAvatar: player.avatar,
+          insights,
+          difficultyMode: this.selectedPracticeDifficulty,
+          highestUnlockedPhase: player.highestUnlockedPhase,
+        });
+      } else {
+        const startPhase = Math.max(1, Math.min(this.selectedPhase, player.highestUnlockedPhase));
+        this.selectedPhase = startPhase;
+        ProgressStore.setSelectedPhase(player.id, startPhase);
+        this.game.initRound({
+          playerId: player.id,
+          profileName: player.displayName,
+          profileAvatar: player.avatar,
+          phase: startPhase,
+        });
+        this.lastRoundPhase = startPhase;
+      }
 
       this.answerLocked = false;
       this.pendingContinue = false;
       this.lastAnswerResult = null;
       this.continueBtn.classList.add("hidden");
+      this.stopSessionBtn.classList.remove("hidden");
       this.setCompanionFeedback("", "neutral");
       this.showScreen(this.gameScreen);
       this.renderCurrentQuestion();
@@ -1435,13 +1715,22 @@
       this.continueBtn.classList.add("hidden");
       this.setCompanionFeedback("", "neutral");
 
-      this.progressEl.textContent = `Vraag ${this.game.currentIndex + 1}/${this.game.config.questionCount} - Level ${this.game.phase}`;
-      this.scoreEl.textContent = `Punten: ${this.game.totalScore}`;
-      this.streakEl.textContent = `Streak: ${this.game.currentStreak}`;
+      if (this.game.mode === "practice") {
+        this.progressEl.textContent = `Vrij oefenen - Vraag ${this.game.currentIndex + 1}`;
+        this.scoreEl.textContent = `Juist: ${this.game.correct}`;
+        this.streakEl.textContent = `Fout: ${this.game.incorrect}`;
+        this.stopQuestionTimer();
+        this.timerEl.textContent = "Geen timer";
+        this.timerEl.classList.remove("warning");
+      } else {
+        this.progressEl.textContent = `Vraag ${this.game.currentIndex + 1}/${this.game.config.questionCount} - Level ${this.game.phase}`;
+        this.scoreEl.textContent = `Punten: ${this.game.totalScore}`;
+        this.streakEl.textContent = `Streak: ${this.game.currentStreak}`;
+        this.startQuestionTimer();
+      }
 
       this.renderClock(q);
       this.renderOptions(q);
-      this.startQuestionTimer();
     }
 
     renderClock(question) {
@@ -1518,14 +1807,32 @@
         }
       });
 
-      this.scoreEl.textContent = `Punten: ${this.game.totalScore}`;
-      this.streakEl.textContent = `Streak: ${this.game.currentStreak}`;
+      if (this.game.mode === "practice") {
+        this.scoreEl.textContent = `Juist: ${this.game.correct}`;
+        this.streakEl.textContent = `Fout: ${this.game.incorrect}`;
+      } else {
+        this.scoreEl.textContent = `Punten: ${this.game.totalScore}`;
+        this.streakEl.textContent = `Streak: ${this.game.currentStreak}`;
+      }
+
+      if (this.game.mode === "practice") {
+        ProgressStore.recordPracticeAnswer(this.game.playerId, {
+          startSession: this.game.currentIndex === 0,
+          isCorrect: result.isCorrect,
+          errorKind: result.errorKind,
+          questionType: result.questionType,
+        });
+      }
 
       const elapsedSec = (result.elapsedMs / 1000).toFixed(1);
       if (result.isCorrect) {
         this.gameScreen.classList.add("success-burst");
         setTimeout(() => this.gameScreen.classList.remove("success-burst"), 420);
-        this.setCompanionFeedback(`Top! ${elapsedSec}s snel. +${result.gainedPoints} punten!`, "happy");
+        const okText =
+          this.game.mode === "practice"
+            ? `Top! ${elapsedSec}s. Goed gezien.`
+            : `Top! ${elapsedSec}s snel. +${result.gainedPoints} punten!`;
+        this.setCompanionFeedback(okText, "happy");
         setTimeout(() => this.proceedToNextQuestion(), 1200);
       } else if (result.isTimeout) {
         this.setCompanionFeedback(
@@ -1555,6 +1862,13 @@
     }
 
     proceedToNextQuestion() {
+      if (this.game.mode === "practice") {
+        this.game.currentIndex += 1;
+        const insights = ProgressStore.getPracticeInsights(this.game.playerId);
+        this.game.pushPracticeQuestion(insights);
+        this.renderCurrentQuestion();
+        return;
+      }
       const hasNext = this.game.moveNext();
       if (hasNext) {
         this.renderCurrentQuestion();

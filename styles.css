@@ -212,6 +212,25 @@ body {
   margin-left: 0;
 }
 
+.mode-switch {
+  display: flex;
+  gap: 0.45rem;
+  margin-bottom: 0.5rem;
+}
+
+.mode-btn {
+  margin-left: 0;
+}
+
+.mode-btn.active {
+  background: #dff1e8;
+  border-color: #6cad8d;
+}
+
+.practice-controls {
+  margin-bottom: 0.5rem;
+}
+
 .collapsible {
   border: 1px solid #cfe2d6;
   border-radius: 0.75rem;
@@ -298,6 +317,12 @@ body {
   color: #5f666c;
   border-color: #adb4bb;
   cursor: not-allowed;
+}
+
+.game-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.3rem;
 }
 
 .hud {

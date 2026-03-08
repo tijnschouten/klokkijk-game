@@ -20,6 +20,21 @@
         <h3 class="sub-title">Spelers</h3>
         <div id="players-list" class="players-list" aria-label="Bestaande spelers"></div>
 
+        <div class="mode-switch" role="group" aria-label="Spelmodus">
+          <button id="mode-challenge-btn" class="secondary-btn mode-btn active" type="button">Ronde</button>
+          <button id="mode-practice-btn" class="secondary-btn mode-btn" type="button">Vrij oefenen</button>
+        </div>
+        <div id="practice-controls" class="practice-controls hidden">
+          <label for="practice-difficulty" class="field-label">Vrij oefenen niveau</label>
+          <select id="practice-difficulty" class="text-input">
+            <option value="auto">Automatisch (aanbevolen)</option>
+            <option value="easy">Makkelijk</option>
+            <option value="medium">Gemiddeld</option>
+            <option value="hard">Moeilijk</option>
+            <option value="player_level">Op mijn niveau</option>
+          </select>
+        </div>
+
         <div class="start-actions">
           <button id="start-btn" class="primary-btn" type="button" disabled>Start ronde</button>
           <button id="reset-progress-btn" class="secondary-btn" type="button">Reset voortgang</button>
@@ -49,6 +64,11 @@
           </section>
         </details>
 
+        <details class="collapsible">
+          <summary>Oefeninzichten (vrij oefenen)</summary>
+          <p id="practice-insights"></p>
+        </details>
+
         <ul class="tips-list">
           <li>Gemixte analoge en digitale vragen</li>
           <li>12s timer per vraag</li>
@@ -58,6 +78,9 @@
       </section>
 
       <section id="game-screen" class="card screen" aria-labelledby="question-title">
+        <div class="game-actions">
+          <button id="stop-session-btn" class="secondary-btn" type="button">Hoofdmenu</button>
+        </div>
         <div class="hud">
           <p id="progress" class="pill">Vraag 1/10</p>
           <p id="score" class="pill">Punten: 0</p>
